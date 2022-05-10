@@ -1,19 +1,48 @@
 package service
 
-import "reflect"
+import (
+	"errors"
+	"fmt"
+	"reflect"
+)
 
-type methodType struct {
-	name  string
+type MethodType struct {
+	value reflect.Value
 	args  reflect.Type
 	reply reflect.Type
 }
 
-func (m *methodType) newArgs() reflect.Value {
+func (m *MethodType) NewArgs() interface{} {
 	t := m.args
 
-	if t.Kind() == reflect.Pointer {
+	if t.Kind() == reflect.Ptr {
 		t = m.args.Elem()
 	}
 
-	return reflect.New(t).Elem()
+	return reflect.New(t).Elem().Interface()
+}
+
+func (m *MethodType) NewReply() interface{} {
+	t := m.reply
+
+	if t.Kind() == reflect.Ptr {
+		t = m.reply.Elem()
+	}
+
+	return reflect.New(t).Interface()
+}
+
+func (m *MethodType) Call(args interface{}, reply interface{}) {
+	argsV := reflect.ValueOf(args)
+	replyV := reflect.ValueOf(reply)
+
+	params := []reflect.Value{argsV}
+	ret := m.value.Call(params)[0]
+
+	if replyV.Type().Kind() != reflect.Ptr {
+		fmt.Println(errors.New("error: call must send pointer type body"))
+		return
+	}
+
+	replyV.Elem().Set(ret)
 }

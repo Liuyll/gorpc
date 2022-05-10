@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"gorpc/message"
+	"gorpc/serviceHandler"
+	"gorpc/test"
 	"io"
 	"net"
-	"sync"
 )
 
 type Server struct {
+	handler *serviceHandler.ServiceHandler
 }
 
 func (s Server) Accept(lis *net.Listener) {
@@ -43,23 +45,21 @@ func (s Server) handleConn(conn io.ReadWriteCloser) {
 		buf = _buf
 	}
 
-	fmt.Println("break")
 	meta := buf
 	var codec message.Codec
 
 	if meta[0] == 'A' {
 		codec = message.NewGobCodec(conn)
 	}
+	codec.Write(message.NewShakeClientHeader(), nil)
 
 	s.handleMessage(&codec)
 }
 
 func (s Server) handleMessage(codec *message.Codec) {
-	sending := &sync.Mutex{}
 	var h = &message.RPCHeader{}
 
 	for {
-
 		if err := (*codec).ReadHeader(h); err != nil {
 			if err != io.EOF {
 				fmt.Println("read header err:", err)
@@ -68,52 +68,76 @@ func (s Server) handleMessage(codec *message.Codec) {
 			}
 		}
 
-		fmt.Println("read client header")
+		serviceMethod := h.ServiceMethod
+		if err, method := s.handler.ResolveServiceMethod(serviceMethod); err != nil {
+			fmt.Println("ResolveServiceMethod err:", err)
+		} else {
+			fmt.Println("start handler service:", h.ServiceMethod)
 
-		var body = new(string)
-		if err := (*codec).ReadBody(body); err != nil {
-			if err != io.EOF {
-				fmt.Println("read body err:", err)
-				(*codec).Close()
-				return
+			var args = method.NewArgs()
+			var reply = method.NewReply()
+			body := message.RPCBody{
+				Args: &args,
+				Reply: reply,
 			}
-		}
+			if v, ok := args.(test.Args); ok {
+				fmt.Println("rrrrrrrr:", v.First)
+				v.First = 2
+			}
 
-		go s.handle(
-			&message.RPCMessage{
-				h,
-				&message.RPCBody{},
-			},
-			codec,
-			sending,
-		)
+			fmt.Println("ggggggggg")
+			if err := (*codec).ReadBody(&body); err != nil {
+				if err != io.EOF {
+					fmt.Println("read body err:", err)
+					(*codec).Close()
+					return
+				}
+			}
+
+			call := serviceCall{
+				method,
+				args,
+				reply,
+			}
+
+			go s.handle(
+				&call,
+				codec,
+			)
+		}
 	}
 }
 
-func (s Server) handle(msg *message.RPCMessage, codec *message.Codec, sending *sync.Mutex) {
-	defer sending.Unlock()
+func (s Server) handle(call *serviceCall, codec *message.Codec) {
+	s.handler.Call(call.method, call.args, call.reply)
 
-	sending.Lock()
-	fmt.Println("call method", msg.H.ServiceMethod)
-	(*codec).Write(&message.RPCHeader{
-		ServiceMethod: msg.H.ServiceMethod,
-	}, "qwe")
+	(*codec).Write(&message.ClientHeader{
+		"serviceResponse",
+		0,
+		nil,
+		call.reply,
+	}, nil)
+
+	fmt.Println("exec end")
+
 }
 
-func Accept(port string) <-chan byte {
+func Accept(port string, handler *serviceHandler.ServiceHandler) <-chan byte {
 	done := make(chan byte, 1)
-	startServer(port, done)
+	startServer(port, handler, done)
 	return done
 }
 
-func startServer(port string, done chan<- byte) {
+func startServer(port string, serviceHandler *serviceHandler.ServiceHandler, done chan<- byte) {
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		fmt.Println("listen err:", err)
 		return
 	}
 
-	fmt.Println("lis create", lis.Addr().String())
 	done <- 'A'
-	go Server{}.Accept(&lis)
+	s := Server{
+		serviceHandler,
+	}
+	go s.Accept(&lis)
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"runtime/debug"
+	"sync"
 )
 
 type GobCodec struct {
@@ -12,6 +14,7 @@ type GobCodec struct {
 	dec  *gob.Decoder
 	enc  *gob.Encoder
 	buf  *bufio.Writer
+	mu *sync.Mutex
 }
 
 func NewGobCodec(conn io.ReadWriteCloser) GobCodec {
@@ -21,25 +24,30 @@ func NewGobCodec(conn io.ReadWriteCloser) GobCodec {
 		gob.NewDecoder(conn),
 		gob.NewEncoder(buf),
 		buf,
+		new(sync.Mutex),
 	}
 }
 
-func (c GobCodec) Write(h *RPCHeader, body interface{}) {
+func (c GobCodec) Write(h interface{}, body interface{}) {
 	defer func() {
+		c.mu.Unlock()
 		if err := c.buf.Flush(); err != nil {
 			fmt.Println("flush error:", err)
 		}
 	}()
 
+	c.mu.Lock()
 	if err := c.enc.Encode(h); err != nil {
-		fmt.Println("encode header err $err")
+		fmt.Println("encode header err:", err)
 	}
-	if err := c.enc.Encode(body); err != nil {
-		fmt.Println("encode body err $err")
+	if body != nil {
+		if err := c.enc.Encode(body); err != nil {
+			fmt.Println("encode body err: \n", err, fmt.Sprintf("debug stack: %s", debug.Stack()))
+		}
 	}
 }
 
-func (c GobCodec) ReadHeader(h *RPCHeader) error {
+func (c GobCodec) ReadHeader(h interface{}) error {
 	if err := c.dec.Decode(h); err != nil {
 		return err
 	}

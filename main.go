@@ -1,16 +1,21 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"gorpc/message"
+	client2 "gorpc/client"
 	"gorpc/server"
-	"net"
+	"gorpc/service"
+	"gorpc/serviceHandler"
+	"gorpc/test"
 	"time"
 )
 
 func createServer(done2 chan byte) {
-	done := server.Accept(":8765")
+	testService := service.NewService(test.TestService{})
+	testHandler := serviceHandler.NewServiceHandler()
+	testHandler.Register("test", testService)
+
+	done := server.Accept(":8765", &testHandler)
 	_ = <-done
 	done2 <- 'A'
 }
@@ -22,33 +27,20 @@ func main() {
 
 	_ = <-createDone
 
-	fmt.Println("connection")
-	conn, err := net.Dial("tcp", "127.0.0.1:8765")
-	if err != nil {
-		fmt.Println("dial err:", err)
-		return
-	}
+	client := client2.NewClient(1, 1)
+	ret := new(int)
+	go client.Call("test.Add", test.Args{
+		First: 1,
+		Second: 1,
+	}, ret)
 
-	writer := bufio.NewWriter(conn)
-	if _, err := writer.Write([]byte{'A', 'B', 'C', 'D', '\n'}); err != nil {
-		fmt.Println("write err:", err)
-		return
-	}
-
-	writer.Flush()
-	time.Sleep(time.Duration(1) * time.Second)
-
-	codec := message.NewGobCodec(conn)
-	codec.Write(&message.RPCHeader{
-		ServiceMethod: "test",
-	}, "client")
-
-	h := &message.RPCHeader{}
-	if err := codec.ReadHeader(h); err != nil {
-		fmt.Println("read server header err:", err)
-		return
-	}
-	fmt.Println("read service header:", h.ServiceMethod)
+	//for i := 0; i < 5; i++ {
+	//	ret := new(int)
+	//	go client.Call("test.Add", test.Args{
+	//		First: i,
+	//		Second: i,
+	//	}, ret)
+	//}
 
 	time.Sleep(time.Duration(5) * time.Second)
 
