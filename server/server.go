@@ -3,8 +3,10 @@ package server
 import (
 	"bufio"
 	"fmt"
+	"gorpc/message"
 	"io"
 	"net"
+	"sync"
 )
 
 type Server struct {
@@ -28,27 +30,90 @@ func (s Server) handleConn(conn io.ReadWriteCloser) {
 	// 2 - 3: compress_way
 	// 4 - 7: header length
 	// 8 - 11: body length
-	buf := make([]byte, 12)
+	var buf []byte
 
 	reader := bufio.NewReader(conn)
+	fmt.Println("start read")
+	if _buf, err := reader.ReadBytes('\n'); err != nil {
+		if err != io.EOF {
+			fmt.Println("read tcp body err:", err)
+			return
+		}
+	} else {
+		buf = _buf
+	}
+
+	fmt.Println("break")
+	meta := buf
+	var codec message.Codec
+
+	if meta[0] == 'A' {
+		codec = message.NewGobCodec(conn)
+	}
+
+	s.handleMessage(&codec)
+}
+
+func (s Server) handleMessage(codec *message.Codec) {
+	sending := &sync.Mutex{}
+	var h = &message.RPCHeader{}
+
 	for {
-		var n int
-		if _n, err := reader.Read(buf); err != nil {
-			n = _n
+
+		if err := (*codec).ReadHeader(h); err != nil {
 			if err != io.EOF {
-				fmt.Println("read tcp body err:", err)
+				fmt.Println("read header err:", err)
+				(*codec).Close()
 				return
 			}
 		}
-		fmt.Println(string(buf[:n]))
+
+		fmt.Println("read client header")
+
+		var body = new(string)
+		if err := (*codec).ReadBody(body); err != nil {
+			if err != io.EOF {
+				fmt.Println("read body err:", err)
+				(*codec).Close()
+				return
+			}
+		}
+
+		go s.handle(
+			&message.RPCMessage{
+				h,
+				&message.RPCBody{},
+			},
+			codec,
+			sending,
+		)
 	}
 }
 
-func Accept(port string) {
+func (s Server) handle(msg *message.RPCMessage, codec *message.Codec, sending *sync.Mutex) {
+	defer sending.Unlock()
+
+	sending.Lock()
+	fmt.Println("call method", msg.H.ServiceMethod)
+	(*codec).Write(&message.RPCHeader{
+		ServiceMethod: msg.H.ServiceMethod,
+	}, "qwe")
+}
+
+func Accept(port string) <-chan byte {
+	done := make(chan byte, 1)
+	startServer(port, done)
+	return done
+}
+
+func startServer(port string, done chan<- byte) {
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		fmt.Println("listen err:", err)
 		return
 	}
-	Server{}.Accept(&lis)
+
+	fmt.Println("lis create", lis.Addr().String())
+	done <- 'A'
+	go Server{}.Accept(&lis)
 }
