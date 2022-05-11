@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"gorpc/message"
 	"gorpc/serviceHandler"
-	"gorpc/test"
 	"io"
 	"net"
+	"sync"
 )
 
 type Server struct {
@@ -58,6 +58,7 @@ func (s Server) handleConn(conn io.ReadWriteCloser) {
 
 func (s Server) handleMessage(codec *message.Codec) {
 	var h = &message.RPCHeader{}
+	sending := sync.Mutex{}
 
 	for {
 		if err := (*codec).ReadHeader(h); err != nil {
@@ -72,20 +73,14 @@ func (s Server) handleMessage(codec *message.Codec) {
 		if err, method := s.handler.ResolveServiceMethod(serviceMethod); err != nil {
 			fmt.Println("ResolveServiceMethod err:", err)
 		} else {
-			fmt.Println("start handler service:", h.ServiceMethod)
+			fmt.Println("start handle service:", h.ServiceMethod)
 
 			var args = method.NewArgs()
 			var reply = method.NewReply()
 			body := message.RPCBody{
-				Args: &args,
-				Reply: reply,
-			}
-			if v, ok := args.(test.Args); ok {
-				fmt.Println("rrrrrrrr:", v.First)
-				v.First = 2
+				args,
 			}
 
-			fmt.Println("ggggggggg")
 			if err := (*codec).ReadBody(&body); err != nil {
 				if err != io.EOF {
 					fmt.Println("read body err:", err)
@@ -96,20 +91,24 @@ func (s Server) handleMessage(codec *message.Codec) {
 
 			call := serviceCall{
 				method,
-				args,
+				body.Args,
 				reply,
 			}
 
 			go s.handle(
 				&call,
 				codec,
+				&sending,
 			)
 		}
 	}
 }
 
-func (s Server) handle(call *serviceCall, codec *message.Codec) {
+func (s Server) handle(call *serviceCall, codec *message.Codec, mu *sync.Mutex) {
 	s.handler.Call(call.method, call.args, call.reply)
+
+	defer mu.Unlock()
+	mu.Lock()
 
 	(*codec).Write(&message.ClientHeader{
 		"serviceResponse",
@@ -117,9 +116,6 @@ func (s Server) handle(call *serviceCall, codec *message.Codec) {
 		nil,
 		call.reply,
 	}, nil)
-
-	fmt.Println("exec end")
-
 }
 
 func Accept(port string, handler *serviceHandler.ServiceHandler) <-chan byte {

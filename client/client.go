@@ -2,10 +2,8 @@ package client
 
 import (
 	"bufio"
-	"encoding/gob"
 	"fmt"
 	"gorpc/message"
-	"gorpc/test"
 	"io"
 	"net"
 	"sync"
@@ -13,26 +11,31 @@ import (
 )
 
 type Client struct {
-	mu *sync.Mutex
-	maxSeq int64
+	mu      *sync.Mutex
+	maxSeq  int64
 	callMap map[int]*Call
-	codec *message.Codec
+	codec   *message.Codec
 }
 
-type CompressType int
-type EncodeType int
-const (
-	GobType EncodeType = 1
-	JsonType EncodeType = 2
-)
+func newClient(comm CommProtocol, address string, encodeType EncodeType, compressType CompressType) *Client {
+	c := new(Client)
 
-func NewClient(encodeType EncodeType, compressType CompressType) *Client {
-	gob.Register(test.Args{})
+	connectDone := make(chan int, 1)
+	c.connectToService(comm, address, encodeType, connectDone)
+	<-connectDone
 
-	conn, err := net.Dial("tcp", "127.0.0.1:8765")
+	c.mu = new(sync.Mutex)
+	c.maxSeq = 0
+
+	go c.handleResponse()
+	return c
+}
+
+func (c *Client) connectToService(comm CommProtocol, address string, encodeType EncodeType, done chan int) {
+	conn, err := net.Dial(comm, address)
 	if err != nil {
 		fmt.Println("dial err:", err)
-		return nil
+		done <- 10001
 	}
 
 	writer := bufio.NewWriter(conn)
@@ -40,7 +43,7 @@ func NewClient(encodeType EncodeType, compressType CompressType) *Client {
 	var encodeTypeFlag byte = 'A'
 	if _, err := writer.Write([]byte{encodeTypeFlag, '_', compressTypeFlag, '_', '\n'}); err != nil {
 		fmt.Println("write err:", err)
-		return nil
+		done <- 10002
 	}
 	writer.Flush()
 
@@ -58,18 +61,11 @@ func NewClient(encodeType EncodeType, compressType CompressType) *Client {
 				panic("server refuse")
 			}
 		}
- 	}
+	}
 
- 	fmt.Println("handle shake success")
-
-	c := new(Client)
+	fmt.Println("handle shake success")
 	c.codec = &codec
-
-	c.mu = new(sync.Mutex)
-	c.maxSeq = 0
-
-	go c.handleResponse()
-	return c
+	done <- 0
 }
 
 func (c Client) handleResponse() {
@@ -107,13 +103,12 @@ func (c Client) Call(serviceMethod string, args interface{}, reply interface{}) 
 	call.Reply = reply
 
 	h := message.RPCHeader{
-		Seq: call.Seq,
+		Seq:           call.Seq,
 		ServiceMethod: serviceMethod,
 	}
 
 	b := message.RPCBody{
 		Args: args,
-		Reply: reply,
 	}
 
 	go c.innerRequest(&h, &b)

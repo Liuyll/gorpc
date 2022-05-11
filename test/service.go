@@ -1,18 +1,19 @@
 package test
 
-import "fmt"
-
 type TestService struct {
-
 }
 
 type Args struct {
-	First int
+	First  int
 	Second int
+}
+
+type Args2 struct {
+	First1  string
+	Second1 int
 }
 
 func (t TestService) Add(args Args) int {
 	ret := args.First + args.Second
-	fmt.Println("return ret:", ret)
 	return ret
 }

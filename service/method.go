@@ -40,7 +40,7 @@ func (m *MethodType) Call(args interface{}, reply interface{}) {
 	ret := m.value.Call(params)[0]
 
 	if replyV.Type().Kind() != reflect.Ptr {
-		fmt.Println(errors.New("error: call must send pointer type body"))
+		fmt.Println(errors.New("error: call must send pointer type reply"))
 		return
 	}
 

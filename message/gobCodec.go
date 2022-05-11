@@ -14,7 +14,7 @@ type GobCodec struct {
 	dec  *gob.Decoder
 	enc  *gob.Encoder
 	buf  *bufio.Writer
-	mu *sync.Mutex
+	mu   *sync.Mutex
 }
 
 func NewGobCodec(conn io.ReadWriteCloser) GobCodec {
@@ -38,7 +38,7 @@ func (c GobCodec) Write(h interface{}, body interface{}) {
 
 	c.mu.Lock()
 	if err := c.enc.Encode(h); err != nil {
-		fmt.Println("encode header err:", err)
+		fmt.Println("encode header err: \n", err, fmt.Sprintf("debug stack: %s", debug.Stack()))
 	}
 	if body != nil {
 		if err := c.enc.Encode(body); err != nil {
@@ -56,10 +56,7 @@ func (c GobCodec) ReadHeader(h interface{}) error {
 }
 
 func (c GobCodec) ReadBody(body interface{}) error {
-	if err := c.dec.Decode(body); err != nil {
-		return err
-	}
-	return nil
+	return c.ReadHeader(body)
 }
 
 func (c GobCodec) Close() {

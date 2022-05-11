@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"fmt"
 	client2 "gorpc/client"
 	"gorpc/server"
@@ -21,27 +22,23 @@ func createServer(done2 chan byte) {
 }
 
 func main() {
+	gob.Register(test.Args{})
+
 	createDone := make(chan byte)
 	fmt.Println("createServer")
 	go createServer(createDone)
 
 	_ = <-createDone
 
-	client := client2.NewClient(1, 1)
-	ret := new(int)
-	go client.Call("test.Add", test.Args{
-		First: 1,
-		Second: 1,
-	}, ret)
+	client := client2.NewClient()
 
-	//for i := 0; i < 5; i++ {
-	//	ret := new(int)
-	//	go client.Call("test.Add", test.Args{
-	//		First: i,
-	//		Second: i,
-	//	}, ret)
-	//}
+	for i := 0; i < 5; i++ {
+		ret := new(int)
+		go client.Call("test.Add", test.Args{
+			First:  i,
+			Second: i,
+		}, ret)
+	}
 
 	time.Sleep(time.Duration(5) * time.Second)
-
 }
