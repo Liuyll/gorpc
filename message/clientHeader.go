@@ -3,7 +3,7 @@ package message
 type ClientHeader struct {
 	Type string
 	Seq int64
-	Error error
+	Error string
 	Reply interface{}
 }
 

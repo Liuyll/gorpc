@@ -10,10 +10,15 @@ type Call struct {
 	Args interface{}
 	Reply interface{}
 	Error error
-	Done chan int
+	done chan int
 	ErrorType EncodeType
 }
 
-func (c Call) IsDone() int {
-	return <- c.Done
+func (c Call) WaitUntilDone() {
+	<- c.done
+	return
+}
+
+func (c Call) Done() {
+	c.done <- 1
 }

@@ -2,8 +2,10 @@ package client
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"gorpc/message"
+	"gorpc/utils"
 	"io"
 	"net"
 	"sync"
@@ -13,7 +15,7 @@ import (
 type Client struct {
 	mu      *sync.Mutex
 	maxSeq  int64
-	callMap map[int]*Call
+	callMap sync.Map
 	codec   *message.Codec
 }
 
@@ -68,18 +70,36 @@ func (c *Client) connectToService(comm CommProtocol, address string, encodeType 
 	done <- 0
 }
 
-func (c Client) handleResponse() {
+func (c *Client) handleResponse() {
 	for {
 		h := new(message.ClientHeader)
 
 		if err := (*(c.codec)).ReadHeader(h); err != nil {
 			if err != io.EOF {
 				fmt.Println("client handleResponse readHeader err:", err)
+				return
 			}
 		} else {
 			if h.Type == "serviceResponse" {
-				if v, ok := h.Reply.(int); ok {
-					fmt.Println("get value:", v)
+				seq := h.Seq
+				v, ok := c.callMap.Load(seq)
+				if !ok {
+					fmt.Println("callmap load error")
+					return
+				}
+
+				if call, ok := v.(*Call); ok {
+					if h.Error != "" {
+						call.Error = errors.New(fmt.Sprintf("SERVER ERROR: %s", h.Error))
+						call.Done()
+						return
+					}
+
+					utils.SetInterfacePtr(call.Reply, h.Reply)
+					call.Done()
+				} else {
+					fmt.Println("call is unexpected")
+					return
 				}
 			} else {
 				fmt.Println("h.Type:", h.Type)
@@ -89,18 +109,19 @@ func (c Client) handleResponse() {
 }
 
 func (c Client) innerRequest(header *message.RPCHeader, body *message.RPCBody) {
-	defer c.mu.Unlock()
 	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	(*(c.codec)).Write(*header, *body)
 }
 
-func (c Client) Call(serviceMethod string, args interface{}, reply interface{}) *Call {
-	atomic.AddInt64(&c.maxSeq, 1)
+func (c *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
+	curSeq := atomic.AddInt64(&c.maxSeq, 1)
 
 	call := new(Call)
-	call.Seq = c.maxSeq
+	call.Seq = curSeq
 	call.Reply = reply
+	call.done = make(chan int, 1)
 
 	h := message.RPCHeader{
 		Seq:           call.Seq,
@@ -111,7 +132,10 @@ func (c Client) Call(serviceMethod string, args interface{}, reply interface{}) 
 		Args: args,
 	}
 
-	go c.innerRequest(&h, &b)
+	c.callMap.Store(curSeq, call)
 
-	return call
+	go c.innerRequest(&h, &b)
+	call.WaitUntilDone()
+
+	return call.Error
 }

@@ -84,7 +84,13 @@ func (s Server) handleMessage(codec *message.Codec) {
 			if err := (*codec).ReadBody(&body); err != nil {
 				if err != io.EOF {
 					fmt.Println("read body err:", err)
-					(*codec).Close()
+					call := serviceCall{
+						nil,
+						nil,
+						nil,
+						h.Seq,
+					}
+					s.SendError(&call, codec, &sending, err.Error())
 					return
 				}
 			}
@@ -93,6 +99,7 @@ func (s Server) handleMessage(codec *message.Codec) {
 				method,
 				body.Args,
 				reply,
+				h.Seq,
 			}
 
 			go s.handle(
@@ -104,21 +111,33 @@ func (s Server) handleMessage(codec *message.Codec) {
 	}
 }
 
-func (s Server) handle(call *serviceCall, codec *message.Codec, mu *sync.Mutex) {
-	s.handler.Call(call.method, call.args, call.reply)
-
-	defer mu.Unlock()
+func (s Server) SendError(call *serviceCall, codec *message.Codec, mu *sync.Mutex, err string) {
 	mu.Lock()
+	defer mu.Unlock()
 
 	(*codec).Write(&message.ClientHeader{
 		"serviceResponse",
-		0,
+		call.Seq,
+		err,
 		nil,
+	}, nil)
+}
+
+func (s Server) handle(call *serviceCall, codec *message.Codec, mu *sync.Mutex) {
+	s.handler.Call(call.method, call.args, call.reply)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	(*codec).Write(&message.ClientHeader{
+		"serviceResponse",
+		call.Seq,
+		"",
 		call.reply,
 	}, nil)
 }
 
-func Accept(port string, handler *serviceHandler.ServiceHandler) <-chan byte {
+func StartServer(port string, handler *serviceHandler.ServiceHandler) <-chan byte {
 	done := make(chan byte, 1)
 	startServer(port, handler, done)
 	return done
@@ -135,5 +154,5 @@ func startServer(port string, serviceHandler *serviceHandler.ServiceHandler, don
 	s := Server{
 		serviceHandler,
 	}
-	go s.Accept(&lis)
+	s.Accept(&lis)
 }
