@@ -48,12 +48,17 @@ func (this ServiceNode) registerNode() error {
 		return err
 	}
 
-	lease.KeepAlive(ctx, grantRes.ID)
+	alives, err := lease.KeepAlive(ctx, grantRes.ID)
+	this.listenPing(alives)
 
 	uid := uuid.New()
 	this.put(uid.String(), grantRes)
 
 	return nil
+}
+
+func (this ServiceNode) listenPing(prod <-chan *clientv3.LeaseKeepAliveResponse)  {
+
 }
 
 func (this ServiceNode) put(uid string, mGrant interface{}) {
