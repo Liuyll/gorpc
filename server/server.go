@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"gorpc/message"
+	"gorpc/server/node"
 	"gorpc/serviceHandler"
 	"io"
 	"net"
@@ -137,18 +138,20 @@ func (s Server) handle(call *serviceCall, codec *message.Codec, mu *sync.Mutex) 
 	}, nil)
 }
 
-func StartServer(port string, handler *serviceHandler.ServiceHandler) <-chan byte {
+func StartServer(name string, port string, handler *serviceHandler.ServiceHandler) <-chan byte {
 	done := make(chan byte, 1)
-	startServer(port, handler, done)
+	startServer(name, port, handler, done)
 	return done
 }
 
-func startServer(port string, serviceHandler *serviceHandler.ServiceHandler, done chan<- byte) {
+func startServer(name string, port string, serviceHandler *serviceHandler.ServiceHandler, done chan<- byte) {
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		fmt.Println("listen err:", err)
 		return
 	}
+
+	node.NewServiceNode(lis.Addr().String(), name, 10)
 
 	done <- 'A'
 	s := Server{

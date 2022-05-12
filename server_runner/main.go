@@ -14,5 +14,5 @@ func main() {
 	testHandler := serviceHandler.NewServiceHandler()
 	testHandler.Register("test", testService)
 
-	server.StartServer(":8765", &testHandler)
+	server.StartServer("testservice", ":8765", &testHandler)
 }
