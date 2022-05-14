@@ -49,7 +49,12 @@ func (this ServiceNode) registerNode() error {
 	}
 
 	alives, err := lease.KeepAlive(ctx, grantRes.ID)
-	this.listenPing(alives)
+	if err != nil {
+		fmt.Println("keepalive lease error:", err)
+	} else {
+		fmt.Println("listenPing")
+		this.listenPing(alives)
+	}
 
 	uid := uuid.New()
 	this.put(uid.String(), grantRes)
@@ -58,7 +63,20 @@ func (this ServiceNode) registerNode() error {
 }
 
 func (this ServiceNode) listenPing(prod <-chan *clientv3.LeaseKeepAliveResponse)  {
-
+	go func() {
+		for {
+			select {
+			case res := <- prod: {
+				if res != nil {
+					fmt.Println("delay lease success:", res.TTL)
+				} else {
+					fmt.Println("lose lease")
+					return
+				}
+			}
+			}
+		}
+	}()
 }
 
 func (this ServiceNode) put(uid string, mGrant interface{}) {
