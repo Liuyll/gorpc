@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"gorpc/message"
+	"gorpc/serviceProto/protocol/protocol"
 	"gorpc/utils"
 	"io"
 	"net"
@@ -16,7 +17,8 @@ type Client struct {
 	mu      *sync.Mutex
 	maxSeq  int64
 	callMap sync.Map
-	codec   *message.Codec
+	codec   *message.ClientCodec
+	conn 	io.ReadWriteCloser
 }
 
 func newClient(comm CommProtocol, address string, encodeType EncodeType, compressType CompressType) *Client {
@@ -33,12 +35,16 @@ func newClient(comm CommProtocol, address string, encodeType EncodeType, compres
 	return c
 }
 
+
 func (c *Client) connectToService(comm CommProtocol, address string, encodeType EncodeType, done chan int) {
 	conn, err := net.Dial(comm, address)
+
 	if err != nil {
 		fmt.Println("dial err:", err)
 		done <- 10001
 	}
+
+	c.conn = conn
 
 	writer := bufio.NewWriter(conn)
 	var compressTypeFlag byte = 'C'
@@ -49,21 +55,33 @@ func (c *Client) connectToService(comm CommProtocol, address string, encodeType 
 	}
 	writer.Flush()
 
-	var codec message.Codec
+	var ioWriterAdapter io.ReadWriteCloser = conn
+	var codec message.ClientCodec = *(message.NewTlvCodec(&ioWriterAdapter))
 	if encodeType == GobType {
-		codec = message.NewGobCodec(conn)
+		//codec = message.NewGobCodec(conn)
 	}
 
-	var h = new(message.ClientHeader)
-	if err := codec.ReadHeader(h); err != nil {
-		if err != io.EOF {
-			panic("read conn err:" + err.Error())
-		} else {
-			if h.Type != "acceptHandShake" {
-				panic("server refuse")
-			}
-		}
+	h, err := codec.ParseResponse()
+	if err != nil {
+		panic("ParseResponse err:" + err.Error())
 	}
+
+	if h.Type != "acceptHandShake" {
+		panic("server refuse")
+	}
+
+	fmt.Println("h.type:", h.Type)
+
+	//var h = new(protocol.RPCResponseHeader)
+	//if err := codec.ReadHeader(h); err != nil {
+	//	if err != io.EOF {
+	//		panic("read conn err:" + err.Error())
+	//	} else {
+	//		if h.Type != "acceptHandShake" {
+	//			panic("server refuse")
+	//		}
+	//	}
+	//}
 
 	fmt.Println("handle shake success")
 	c.codec = &codec
@@ -72,9 +90,7 @@ func (c *Client) connectToService(comm CommProtocol, address string, encodeType 
 
 func (c *Client) handleResponse() {
 	for {
-		h := new(message.ClientHeader)
-
-		if err := (*(c.codec)).ReadHeader(h); err != nil {
+		if h, err := (*(c.codec)).ParseResponse(); err != nil {
 			if err != io.EOF {
 				fmt.Println("client handleResponse readHeader err:", err)
 				return
@@ -112,7 +128,7 @@ func (c Client) innerRequest(header *message.RPCHeader, body *message.RPCBody) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	(*(c.codec)).Write(*header, *body)
+	//(*(c.codec)).Write(*header, *body)
 }
 
 func (c *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
@@ -138,4 +154,23 @@ func (c *Client) Call(serviceMethod string, args interface{}, reply interface{})
 	call.WaitUntilDone()
 
 	return call.Error
+}
+
+func (c *Client) CallWithTlv(serviceMethod string, args []byte, reply interface{}) {
+	curSeq := atomic.AddInt64(&c.maxSeq, 1)
+	tlvCodec := message.NewTlvCodec(&(c.conn))
+
+	tlvCodec.WriteMeta(1, 1)
+	h := protocol.RPCHeader{
+		Encoding: 1,
+		Compress: 1,
+		Service: serviceMethod,
+		Seq: int32(curSeq),
+		Timeout: 0,
+	}
+
+	tlvCodec.WriteHeader(&h)
+	tlvCodec.WriteHeader(&protocol.RPCBody{
+		Args: args,
+	})
 }

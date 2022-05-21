@@ -1,0 +1,10 @@
+syntax = "proto3";
+option go_package = "/protocol";
+
+message RPCHeader {
+  int32 Encoding = 1;
+  int32 Compress = 2;
+  string Service = 3;
+  int32 Seq = 4;
+  int32 Timeout = 5;
+}

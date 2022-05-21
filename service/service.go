@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 type Service struct {
@@ -32,20 +33,32 @@ func NewService(svr interface{}) *Service {
 		m := rt.Method(i)
 		mt := m.Type
 		mName := m.Name
+
+		if strings.HasPrefix(mName, "Unmarshal") {
+			continue
+		}
 		fmt.Println("register method:", mName, mt.Kind())
 
 		if mt.NumIn() != 2 {
 			fmt.Println(fmt.Sprintf("method %s arguments length not equal one", mName))
+			continue
 		}
 
 		if mt.NumOut() != 1 {
 			fmt.Println(fmt.Sprintf("method %s return length not equal one", mName))
+			continue
+		}
+
+		if _, ok := rt.MethodByName("Unmarshal" + mName); !ok {
+			fmt.Printf("method: %s must unmarshal way \n", mName)
+			continue
 		}
 
 		s.serviceMap[mName] = &MethodType{
 			rv.Method(i),
 			mt.In(1),
 			mt.Out(0),
+			rv.MethodByName("Unmarshal" + mName),
 		}
 	}
 

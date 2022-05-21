@@ -1,0 +1,6 @@
+syntax = "proto3";
+option go_package = "/protocol";
+
+message RPCBody {
+  bytes Args = 1;
+}

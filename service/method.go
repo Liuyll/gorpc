@@ -10,6 +10,15 @@ type MethodType struct {
 	value reflect.Value
 	args  reflect.Type
 	reply reflect.Type
+	unmarshalArgs reflect.Value
+}
+
+func (m *MethodType) UnmarshalArgs(args []byte) interface{} {
+	ret := m.unmarshalArgs.Call([]reflect.Value{reflect.ValueOf(args)})[0]
+	if ret.Type().Kind() != reflect.Ptr {
+		panic("cao")
+	}
+	return ret.Elem().Interface()
 }
 
 func (m *MethodType) NewArgs() interface{} {

@@ -20,6 +20,15 @@ func (c Center) Call(method string, args interface{}, reply interface{}) error {
 	return client.Call(method, args, reply)
 }
 
+func (c Center) CallWithTlv(method string, args []byte, reply interface{}) error {
+	address := "127.0.0.1:8765"
+
+	client := c.getClient(address)
+
+	client.CallWithTlv(method, args, reply)
+	return nil
+}
+
 func (c Center) getClient(address string) *Client {
 	c.connectLock.Lock()
 	defer c.connectLock.Unlock()

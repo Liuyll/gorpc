@@ -3,7 +3,10 @@ package message
 import (
 	"bufio"
 	"encoding/gob"
+	"errors"
 	"fmt"
+	"gorpc/service"
+	"gorpc/serviceHandler"
 	"io"
 	"runtime/debug"
 	"sync"
@@ -61,4 +64,42 @@ func (c GobCodec) ReadBody(body interface{}) error {
 
 func (c GobCodec) Close() {
 	c.conn.Close()
+}
+
+func (c GobCodec) ParseRequest(handler *serviceHandler.ServiceHandler) (*service.ServiceCall, error) {
+	var h = RPCHeader{}
+
+	if err := c.ReadHeader(h); err != nil {
+		if err != io.EOF {
+			return nil, err
+		}
+	}
+
+	var call service.ServiceCall
+	serviceMethod := h.ServiceMethod
+	if err, method := handler.ResolveServiceMethod(serviceMethod); err != nil {
+		return nil, errors.New("ResolveServiceMethod err: " + err.Error())
+	} else {
+		fmt.Println("start handle service:", h.ServiceMethod)
+
+		var args = method.NewArgs()
+		body := RPCBody{
+			args,
+		}
+
+		if err := c.ReadBody(&body); err != nil {
+			if err != io.EOF {
+				fmt.Println("read body err:", err)
+
+				call = service.NewServiceCall(nil, nil, nil, h.Seq)
+				return &call, err
+			}
+		}
+
+		call = service.NewServiceCall(method, body.Args, method.NewReply(), h.Seq)
+		return &call, nil
+	}
+
+
+	return &call, nil
 }

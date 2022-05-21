@@ -2,8 +2,9 @@ package main
 
 import (
 	"encoding/gob"
-	"fmt"
+	"github.com/golang/protobuf/proto"
 	client2 "gorpc/client"
+	"gorpc/serviceProto/service/test/Add"
 	"gorpc/test"
 	"time"
 )
@@ -13,19 +14,25 @@ func main() {
 
 	client := client2.NewClient()
 
-	for i := 0; i < 5; i++ {
-		go func(i int) {
-			ret := new(int)
-			if err := client.Call("test.Add", test.Args{
-				First:  i,
-				Second: i,
-			}, ret); err != nil {
-				fmt.Println("err:", err)
-			} else {
-				fmt.Println("call end:", *ret, " i:", i)
-			}
-		}(i)
+	args, err := proto.Marshal(&Add.Payload{First: 1, Second: 2})
+	if err != nil {
+		panic(err)
 	}
 
-	time.Sleep(time.Duration(5) * time.Second)
+	client.CallWithTlv("test.AddProto", args, nil)
+	//for i := 0; i < 5; i++ {
+	//	go func(i int) {
+	//		ret := new(int)
+	//		if err := client.Call("test.Add", test.Args{
+	//			First:  i,
+	//			Second: i,
+	//		}, ret); err != nil {
+	//			fmt.Println("err:", err)
+	//		} else {
+	//			fmt.Println("call end:", *ret, " i:", i)
+	//		}
+	//	}(i)
+	//}
+
+	time.Sleep(time.Duration(50) * time.Second)
 }

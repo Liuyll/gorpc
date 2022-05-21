@@ -1,0 +1,7 @@
+syntax = "proto3";
+option go_package = "/Add";
+
+message Payload {
+  int32 First = 1;
+  int32 Second = 2;
+}

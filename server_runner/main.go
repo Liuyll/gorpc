@@ -15,8 +15,9 @@ func main() {
 	testHandler.Register("test", testService)
 
 	go server.StartServer("testservice", ":8765", &testHandler)
-	go server.StartServer("testservice", ":8766", &testHandler)
+	//go server.StartServer("testservice", ":8766", &testHandler)
 
+	go server.ListenHTTP(&testHandler)
 	select {
 
 	}

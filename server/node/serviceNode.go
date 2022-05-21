@@ -68,7 +68,7 @@ func (this ServiceNode) listenPing(prod <-chan *clientv3.LeaseKeepAliveResponse)
 			select {
 			case res := <- prod: {
 				if res != nil {
-					fmt.Println("delay lease success:", res.TTL)
+					//fmt.Println("delay lease success:", res.TTL)
 				} else {
 					fmt.Println("lose lease")
 					return
