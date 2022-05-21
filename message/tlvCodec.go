@@ -11,6 +11,7 @@ import (
 	"gorpc/utils"
 	"io"
 	"sync"
+	"time"
 )
 
 type TlvCodec struct {
@@ -35,7 +36,12 @@ func NewTlvCodec(conn *io.ReadWriteCloser) *TlvCodec {
 }
 
 func (c TlvCodec) WriteMeta(encoding int, compress int) {
-	defer c.buf.Flush()
+	defer func() {
+		err := c.buf.Flush()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	data := make([]byte, 2)
 	data[0] = utils.IntToBytes(encoding)[:1][0]
@@ -45,17 +51,26 @@ func (c TlvCodec) WriteMeta(encoding int, compress int) {
 }
 
 func (c TlvCodec) WriteWithLength(data []byte) {
+	defer func() {
+		c.buf.Flush()
+		c.mu.Unlock()
+	}()
+
+	c.mu.Lock()
+
 	l := len(data)
 	lb := utils.IntToBytes(l)
 
-	c.Write(utils.ConcatBytes(lb, data))
+	data = utils.ConcatBytes(lb, data)
+	fmt.Println(" WriteWithLength len:", len(data))
+	c.buf.Write(data)
 }
 
 func (c TlvCodec) Write(data interface{}) {
 	c.mu.Lock()
 	defer func() {
-		c.mu.Unlock()
 		c.buf.Flush()
+		c.mu.Unlock()
 	}()
 
 	if d, ok := data.([]byte); ok {
@@ -70,7 +85,9 @@ func (c TlvCodec) Close() {
 }
 
 func (c TlvCodec) WriteHeader(header proto.Message) error {
-	defer c.buf.Flush()
+	defer func() {
+		c.buf.Flush()
+	}()
 
 	data, err := proto.Marshal(header)
 	if err != nil {
@@ -80,7 +97,8 @@ func (c TlvCodec) WriteHeader(header proto.Message) error {
 	c.buf.Write(utils.IntToBytes(len(data)))
 	c.buf.Write(data)
 
-	fmt.Println("len data:", len(data))
+	fmt.Println(data)
+
 	return nil
 }
 
@@ -101,7 +119,7 @@ func (c TlvCodec) readMeta() (*meta, error) {
 	}
 }
 
-func (c TlvCodec) readHeader() (*protocol.RPCHeader, error){
+func (c TlvCodec) readHeader() (*protocol.RPCHeader, error) {
 	lengthBuf := make([]byte, 4)
 
 	if n, err := (*(c.conn)).Read(lengthBuf); err != nil {
@@ -114,10 +132,10 @@ func (c TlvCodec) readHeader() (*protocol.RPCHeader, error){
 
 	headerLength := utils.BytesToInt(lengthBuf[:4])
 
-	fmt.Println("headerLength:", headerLength)
+	fmt.Println("get header headerLength:", headerLength)
 	data := make([]byte, headerLength)
 	reader := bufio.NewReader(*c.conn)
-	n , err := reader.Read(data)
+	n, err := reader.Read(data)
 	if err != nil {
 		return nil, err
 	}
@@ -134,28 +152,30 @@ func (c TlvCodec) readHeader() (*protocol.RPCHeader, error){
 func (c TlvCodec) ReadBody() (*protocol.RPCBody, error) {
 	lengthBuf := make([]byte, 4)
 
+	fmt.Println("read before")
 	if n, err := (*(c.conn)).Read(lengthBuf); err != nil {
+		fmt.Println("read err:", err, " n:", n)
 		return nil, err
 	} else {
+		fmt.Println("read body n:", n)
 		if n != 4 {
 			return nil, errors.New("not enough data to read headerLength")
 		}
 	}
+	fmt.Println("read end")
 
 	bodyLength := utils.BytesToInt(lengthBuf[:4])
 
 	data := make([]byte, bodyLength)
 	reader := bufio.NewReader(*c.conn)
 
-	n , err := reader.Read(data)
+	n, err := reader.Read(data)
 	if err != nil {
 		return nil, err
 	}
 	if n != bodyLength {
 		return nil, errors.New("not enough data to read header")
 	}
-
-	fmt.Println("this")
 
 	body := protocol.RPCBody{}
 	err = proto.Unmarshal(data, &body)
@@ -175,6 +195,8 @@ func (c TlvCodec) ParseRequest(handler *serviceHandler.ServiceHandler) (*service
 	}
 	fmt.Println("request meta encoding:", meta.encoding)
 
+	time.Sleep(time.Duration(1) * time.Second)
+
 	header, err := c.readHeader()
 	if err != nil {
 		return nil, err
@@ -184,7 +206,8 @@ func (c TlvCodec) ParseRequest(handler *serviceHandler.ServiceHandler) (*service
 
 	body, err := c.ReadBody()
 	if err != nil {
-		return  nil, err
+		fmt.Println("read body err:", err)
+		return nil, err
 	}
 
 	err, method := handler.ResolveServiceMethod(serviceMethod)
@@ -211,10 +234,10 @@ func (c TlvCodec) ParseResponse() (*protocol.RPCResponseHeader, error) {
 
 	headerLength := utils.BytesToInt(lengthBuf[:4])
 
-	fmt.Println("headerLength:", headerLength)
+	fmt.Println("parse headerLength:", headerLength)
 	data := make([]byte, headerLength)
 	reader := bufio.NewReader(*c.conn)
-	n , err := reader.Read(data)
+	n, err := reader.Read(data)
 	if err != nil {
 		return nil, err
 	}

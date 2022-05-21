@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"gorpc/message"
 	"gorpc/serviceProto/protocol/protocol"
-	"gorpc/utils"
 	"io"
 	"net"
 	"sync"
@@ -18,7 +18,7 @@ type Client struct {
 	maxSeq  int64
 	callMap sync.Map
 	codec   *message.ClientCodec
-	conn 	io.ReadWriteCloser
+	conn    io.ReadWriteCloser
 }
 
 func newClient(comm CommProtocol, address string, encodeType EncodeType, compressType CompressType) *Client {
@@ -34,7 +34,6 @@ func newClient(comm CommProtocol, address string, encodeType EncodeType, compres
 	go c.handleResponse()
 	return c
 }
-
 
 func (c *Client) connectToService(comm CommProtocol, address string, encodeType EncodeType, done chan int) {
 	conn, err := net.Dial(comm, address)
@@ -70,19 +69,6 @@ func (c *Client) connectToService(comm CommProtocol, address string, encodeType 
 		panic("server refuse")
 	}
 
-	fmt.Println("h.type:", h.Type)
-
-	//var h = new(protocol.RPCResponseHeader)
-	//if err := codec.ReadHeader(h); err != nil {
-	//	if err != io.EOF {
-	//		panic("read conn err:" + err.Error())
-	//	} else {
-	//		if h.Type != "acceptHandShake" {
-	//			panic("server refuse")
-	//		}
-	//	}
-	//}
-
 	fmt.Println("handle shake success")
 	c.codec = &codec
 	done <- 0
@@ -100,7 +86,7 @@ func (c *Client) handleResponse() {
 				seq := h.Seq
 				v, ok := c.callMap.Load(seq)
 				if !ok {
-					fmt.Println("callmap load error")
+					fmt.Printf("Seq: %d is not exist \n", seq)
 					return
 				}
 
@@ -111,7 +97,14 @@ func (c *Client) handleResponse() {
 						return
 					}
 
-					utils.SetInterfacePtr(call.Reply, h.Reply)
+					if r, ok := call.Reply.(proto.Message); !ok {
+						call.Error = errors.New("reply type is not message")
+					} else {
+						if err := proto.Unmarshal(h.Reply, r); err != nil {
+							call.Error = err
+						}
+					}
+
 					call.Done()
 				} else {
 					fmt.Println("call is unexpected")
@@ -129,6 +122,14 @@ func (c Client) innerRequest(header *message.RPCHeader, body *message.RPCBody) {
 	defer c.mu.Unlock()
 
 	//(*(c.codec)).Write(*header, *body)
+}
+
+func (c Client) innerRequestWithPb(header *protocol.RPCHeader, body *protocol.RPCBody) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	(*(c.codec)).WriteHeader(header)
+	(*(c.codec)).WriteHeader(body)
 }
 
 func (c *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
@@ -156,21 +157,43 @@ func (c *Client) Call(serviceMethod string, args interface{}, reply interface{})
 	return call.Error
 }
 
-func (c *Client) CallWithTlv(serviceMethod string, args []byte, reply interface{}) {
+func (c *Client) CallWithTlv(serviceMethod string, args []byte, reply interface{}) error {
 	curSeq := atomic.AddInt64(&c.maxSeq, 1)
-	tlvCodec := message.NewTlvCodec(&(c.conn))
+	tlvCodec := *(c.codec)
 
-	tlvCodec.WriteMeta(1, 1)
-	h := protocol.RPCHeader{
-		Encoding: 1,
-		Compress: 1,
-		Service: serviceMethod,
-		Seq: int32(curSeq),
-		Timeout: 0,
+	call := new(Call)
+	call.Seq = curSeq
+	call.done = make(chan int, 1)
+	call.Reply = reply
+
+	c.callMap.Store(curSeq, call)
+
+	fmt.Println("write call")
+	tlvCodec.Write([]byte{1, 1})
+
+	//h := protocol.RPCHeader{
+	//	Encoding: 1,
+	//	Compress: 1,
+	//	Service:  serviceMethod,
+	//	Seq:      int32(curSeq),
+	//	Timeout:  0,
+	//}
+	//b := protocol.RPCBody{
+	//	Args: args,
+	//}
+	//
+	//c.innerRequestWithPb(&h, &b)
+
+	tlvCodec.WriteWithLength([]byte{8, 1, 16, 1, 26, 13, 116, 101, 115, 116, 46, 65, 100, 100, 80, 114, 111, 116, 111, 32, 1})
+	//time.Sleep(time.Duration(1) * time.Millisecond)
+	tlvCodec.WriteWithLength([]byte{10, 4, 8, 1, 16, 2})
+
+	//tlvCodec.WriteWithLength(utils.IntToBytes(14124124))
+
+	call.WaitUntilDone()
+	if call.Error != nil {
+		return call.Error
 	}
 
-	tlvCodec.WriteHeader(&h)
-	tlvCodec.WriteHeader(&protocol.RPCBody{
-		Args: args,
-	})
+	return nil
 }

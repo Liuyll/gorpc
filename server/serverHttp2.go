@@ -15,21 +15,21 @@ type HttpHandler struct {
 }
 
 type HttpServiceBody struct {
-	Encoding int `json:"encoding"`
-	Compress int `json:"compress"`
-	Args []byte `json:"args"`
-	Timeout int `json:"timeout"`
-	Service string `json:"service"`
+	Encoding int    `json:"encoding"`
+	Compress int    `json:"compress"`
+	Args     []byte `json:"args"`
+	Timeout  int    `json:"timeout"`
+	Service  string `json:"service"`
 }
 
 func ListenHTTP(s *serviceHandler.ServiceHandler) {
 	srv := &http.Server{Addr: ":8000"}
 	http.Handle("/", HttpHandler{handler: s})
-	certPath, err := filepath.Abs("D:\\code\\utils\\https\\server.crt")
+	certPath, err := filepath.Abs("./cert/server.crt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	keyPath, err := filepath.Abs("D:\\code\\utils\\https\\server_no_passwd.key")
+	keyPath, err := filepath.Abs("./cert/server_no_passwd.key")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func (this HttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := method.UnmarshalArgs([]byte{8,1,16,2})
+	args := method.UnmarshalArgs([]byte{8, 1, 16, 2})
 
 	reply := method.NewReply()
 

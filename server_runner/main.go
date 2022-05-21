@@ -18,7 +18,5 @@ func main() {
 	//go server.StartServer("testservice", ":8766", &testHandler)
 
 	go server.ListenHTTP(&testHandler)
-	select {
-
-	}
+	select {}
 }

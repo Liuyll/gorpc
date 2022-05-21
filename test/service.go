@@ -25,8 +25,7 @@ func (t TestService) Add(args Args) int {
 	return ret
 }
 
-func (t TestService) UnmarshalAdd(args []byte) (*
-	Add.Payload, error) {
+func (t TestService) UnmarshalAdd(args []byte) (*Add.Payload, error) {
 	ret := Add.Payload{}
 	err := proto.Unmarshal(args, &ret)
 	if err != nil {
@@ -35,10 +34,12 @@ func (t TestService) UnmarshalAdd(args []byte) (*
 	return &ret, nil
 }
 
-func (t TestService) AddProto(payload Add.Payload) int {
+func (t TestService) AddProto(payload Add.Payload) Add.Result {
 	ret := int(payload.First + payload.Second)
 	fmt.Println("ret:", ret)
-	return ret
+	return Add.Result{
+		Result: int32(ret),
+	}
 }
 
 func (t TestService) UnmarshalAddProto(args []byte) (*Add.Payload, error) {

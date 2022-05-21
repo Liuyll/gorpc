@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"fmt"
 	"github.com/golang/protobuf/proto"
 	client2 "gorpc/client"
 	"gorpc/serviceProto/service/test/Add"
@@ -19,7 +20,13 @@ func main() {
 		panic(err)
 	}
 
-	client.CallWithTlv("test.AddProto", args, nil)
+	reply := new(Add.Result)
+	if err := client.CallWithTlv("test.AddProto", args, reply); err != nil {
+		panic(err)
+	} else {
+		fmt.Println("RET:", reply.Result)
+	}
+
 	//for i := 0; i < 5; i++ {
 	//	go func(i int) {
 	//		ret := new(int)

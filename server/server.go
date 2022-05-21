@@ -17,14 +17,14 @@ import (
 )
 
 type ClientConnInfo struct {
-	timeout int
-	retry int
+	timeout  int
+	retry    int
 	maxRetry int
-	conn *io.ReadWriteCloser
+	conn     *io.ReadWriteCloser
 }
 
 type Server struct {
-	handler *serviceHandler.ServiceHandler
+	handler   *serviceHandler.ServiceHandler
 	connInfos sync.Map
 }
 
@@ -59,7 +59,9 @@ func (s Server) handleConn(_conn *net.Conn) {
 	// 0 - 1: encode_way
 	// 2 - 3: compress_way
 	// 4 - 7: header length
-	// 8 - 11: body length
+	// ...header
+	// n - n+3: body length
+	// ...body
 	var buf []byte
 
 	reader := bufio.NewReader(conn)
@@ -74,7 +76,7 @@ func (s Server) handleConn(_conn *net.Conn) {
 	}
 
 	meta := buf
-	var codec message.Codec
+	var codec message.ServerCodec
 
 	if meta[0] == 'B' {
 		//codec = message.NewGobCodec(conn)
@@ -90,19 +92,17 @@ func (s Server) handleConn(_conn *net.Conn) {
 		fmt.Println("send acceptHandShake error:", err)
 	}
 
-	fmt.Println("send before")
-
 	codec.WriteWithLength(data)
 
 	s.handleMessage(&codec, _conn)
 }
 
-func (s Server) parseTLVProto(conn *io.ReadWriteCloser) (*service.ServiceCall, error){
+func (s Server) parseTLVProto(conn *io.ReadWriteCloser) (*service.ServiceCall, error) {
 	tlver := message.NewTlvCodec(conn)
 	return tlver.ParseRequest(s.handler)
 }
 
-func (s Server) handleMessage(codec *message.Codec, _conn *net.Conn) {
+func (s Server) handleMessage(codec *message.ServerCodec, _conn *net.Conn) {
 	var conn io.ReadWriteCloser = *_conn
 	sending := sync.Mutex{}
 
@@ -123,7 +123,7 @@ func (s Server) handleMessage(codec *message.Codec, _conn *net.Conn) {
 					}
 					info.retry++
 					s.connInfos.Store(_conn, info)
-					time.Sleep(time.Duration(info.timeout)*time.Millisecond)
+					time.Sleep(time.Duration(info.timeout) * time.Millisecond)
 				}
 			}
 			continue
@@ -137,7 +137,7 @@ func (s Server) handleMessage(codec *message.Codec, _conn *net.Conn) {
 	}
 }
 
-func (s Server) SendError(call *service.ServiceCall, codec *message.Codec, mu *sync.Mutex, err string) {
+func (s Server) SendError(call *service.ServiceCall, codec *message.ServerCodec, mu *sync.Mutex, err string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -149,18 +149,27 @@ func (s Server) SendError(call *service.ServiceCall, codec *message.Codec, mu *s
 	})
 }
 
-func (s Server) handle(call *service.ServiceCall, codec *message.Codec, mu *sync.Mutex) {
+func (s Server) handle(call *service.ServiceCall, codec *message.ServerCodec, mu *sync.Mutex) {
 	s.handler.Call(call.Method, call.Args, call.Reply)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	(*codec).Write(&message.ClientHeader{
-		"serviceResponse",
-		call.Seq,
-		"",
-		call.Reply,
-	})
+	responseHeader := protocol.RPCResponseHeader{
+		Type: "serviceResponse",
+		Seq:  call.Seq,
+	}
+
+	if r, ok := call.Reply.(proto.Message); !ok {
+		responseHeader.Error = "service error: reply not message"
+	} else {
+		if rd, err := proto.Marshal(r); err != nil {
+			responseHeader.Error = err.Error()
+		} else {
+			responseHeader.Reply = rd
+		}
+	}
+	(*codec).WriteHeader(&responseHeader)
 }
 
 func StartServer(name string, port string, handler *serviceHandler.ServiceHandler) <-chan byte {

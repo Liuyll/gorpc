@@ -8,8 +8,8 @@ import (
 type Pool = map[string]*Client
 type Center struct {
 	serviceClientPool Pool
-	connectLock *sync.Mutex
-	connectBuildMap map[string]bool
+	connectLock       *sync.Mutex
+	connectBuildMap   map[string]bool
 }
 
 func (c Center) Call(method string, args interface{}, reply interface{}) error {
@@ -25,8 +25,7 @@ func (c Center) CallWithTlv(method string, args []byte, reply interface{}) error
 
 	client := c.getClient(address)
 
-	client.CallWithTlv(method, args, reply)
-	return nil
+	return client.CallWithTlv(method, args, reply)
 }
 
 func (c Center) getClient(address string) *Client {
