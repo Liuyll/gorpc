@@ -18,6 +18,7 @@ type TlvCodec struct {
 	conn *io.ReadWriteCloser
 	buf  *bufio.Writer
 	mu   *sync.Mutex
+	reader *bufio.Reader
 }
 
 type meta struct {
@@ -27,11 +28,13 @@ type meta struct {
 
 func NewTlvCodec(conn *io.ReadWriteCloser) *TlvCodec {
 	buf := bufio.NewWriter(*conn)
+	reader := bufio.NewReader(*conn)
 	mu := new(sync.Mutex)
 	return &TlvCodec{
 		conn,
 		buf,
 		mu,
+		reader,
 	}
 }
 
@@ -62,9 +65,9 @@ func (c TlvCodec) WriteWithLength(data []byte) {
 	lb := utils.IntToBytes(l)
 
 	data = utils.ConcatBytes(lb, data)
-	fmt.Println(" WriteWithLength len:", len(data))
 	c.buf.Write(data)
 }
+
 
 func (c TlvCodec) Write(data interface{}) {
 	c.mu.Lock()
@@ -96,8 +99,6 @@ func (c TlvCodec) WriteHeader(header proto.Message) error {
 
 	c.buf.Write(utils.IntToBytes(len(data)))
 	c.buf.Write(data)
-
-	fmt.Println(data)
 
 	return nil
 }
@@ -132,10 +133,9 @@ func (c TlvCodec) readHeader() (*protocol.RPCHeader, error) {
 
 	headerLength := utils.BytesToInt(lengthBuf[:4])
 
-	fmt.Println("get header headerLength:", headerLength)
 	data := make([]byte, headerLength)
-	reader := bufio.NewReader(*c.conn)
-	n, err := reader.Read(data)
+	n, err := c.reader.Read(data)
+
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +144,7 @@ func (c TlvCodec) readHeader() (*protocol.RPCHeader, error) {
 	}
 
 	header := protocol.RPCHeader{}
+	data = data[:headerLength]
 	proto.Unmarshal(data, &header)
 
 	return &header, nil
@@ -153,11 +154,10 @@ func (c TlvCodec) ReadBody() (*protocol.RPCBody, error) {
 	lengthBuf := make([]byte, 4)
 
 	fmt.Println("read before")
-	if n, err := (*(c.conn)).Read(lengthBuf); err != nil {
+	if n, err := c.reader.Read(lengthBuf); err != nil {
 		fmt.Println("read err:", err, " n:", n)
 		return nil, err
 	} else {
-		fmt.Println("read body n:", n)
 		if n != 4 {
 			return nil, errors.New("not enough data to read headerLength")
 		}
@@ -167,9 +167,8 @@ func (c TlvCodec) ReadBody() (*protocol.RPCBody, error) {
 	bodyLength := utils.BytesToInt(lengthBuf[:4])
 
 	data := make([]byte, bodyLength)
-	reader := bufio.NewReader(*c.conn)
 
-	n, err := reader.Read(data)
+	n, err := c.reader.Read(data)
 	if err != nil {
 		return nil, err
 	}

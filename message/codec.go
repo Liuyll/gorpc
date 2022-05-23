@@ -8,20 +8,18 @@ import (
 )
 
 type Codec interface {
+	Close()
+	Write(interface{})
+	WriteWithLength(data []byte)
+	WriteHeader(header proto.Message) error
 }
 
 type ServerCodec interface {
-	Close()
-	Write(interface{})
+	Codec
 	ParseRequest(handler *serviceHandler.ServiceHandler) (*service.ServiceCall, error)
-	WriteWithLength(data []byte)
-	WriteHeader(header proto.Message) error
 }
 
 type ClientCodec interface {
-	Close()
-	Write(interface{})
+	Codec
 	ParseResponse() (*protocol.RPCResponseHeader, error)
-	WriteWithLength(data []byte)
-	WriteHeader(header proto.Message) error
 }

@@ -65,7 +65,6 @@ func (s Server) handleConn(_conn *net.Conn) {
 	var buf []byte
 
 	reader := bufio.NewReader(conn)
-	fmt.Println("start read")
 	if _buf, err := reader.ReadBytes('\n'); err != nil {
 		if err != io.EOF {
 			fmt.Println("read tcp body err:", err)

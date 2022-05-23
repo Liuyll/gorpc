@@ -168,27 +168,23 @@ func (c *Client) CallWithTlv(serviceMethod string, args []byte, reply interface{
 
 	c.callMap.Store(curSeq, call)
 
-	fmt.Println("write call")
 	tlvCodec.Write([]byte{1, 1})
 
-	//h := protocol.RPCHeader{
-	//	Encoding: 1,
-	//	Compress: 1,
-	//	Service:  serviceMethod,
-	//	Seq:      int32(curSeq),
-	//	Timeout:  0,
-	//}
-	//b := protocol.RPCBody{
-	//	Args: args,
-	//}
-	//
-	//c.innerRequestWithPb(&h, &b)
+	h := protocol.RPCHeader{
+		Encoding: 1,
+		Compress: 1,
+		Service:  serviceMethod,
+		Seq:      int32(curSeq),
+		Timeout:  0,
+	}
+	b := protocol.RPCBody{
+		Args: args,
+	}
 
-	tlvCodec.WriteWithLength([]byte{8, 1, 16, 1, 26, 13, 116, 101, 115, 116, 46, 65, 100, 100, 80, 114, 111, 116, 111, 32, 1})
-	//time.Sleep(time.Duration(1) * time.Millisecond)
-	tlvCodec.WriteWithLength([]byte{10, 4, 8, 1, 16, 2})
+	c.innerRequestWithPb(&h, &b)
 
-	//tlvCodec.WriteWithLength(utils.IntToBytes(14124124))
+	//tlvCodec.WriteWithLength([]byte{8, 1, 16, 1, 26, 13, 116, 101, 115, 116, 46, 65, 100, 100, 80, 114, 111, 116, 111, 32, 1})
+	//tlvCodec.WriteWithLength([]byte{10, 4, 8, 1, 16, 2})
 
 	call.WaitUntilDone()
 	if call.Error != nil {
